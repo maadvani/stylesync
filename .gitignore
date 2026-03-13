@@ -1,0 +1,12 @@
+# Secret keys - NEVER upload these
+.env
+.env.local
+.env.*
+
+# Auto-generated folders
+node_modules/
+__pycache__/
+.DS_Store
+*.pyc
+dist/
+build/

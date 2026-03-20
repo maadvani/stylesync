@@ -35,6 +35,7 @@ The backend uses the **Inference API** (serverless). No GPU or local model neede
 - Open your Supabase project → **SQL Editor**.
 - Run **`supabase_wardrobe_items.sql`** once to create the `wardrobe_items` table.
 - Run **`supabase_user_profiles.sql`** once to create the `user_profiles` table (for color quiz result).
+- Run **`supabase_trends.sql`** once to create the `trends` + `user_trend_matches` tables.
 
 You already have `SUPABASE_URL` and `SUPABASE_KEY` in `.env`.
 
@@ -54,3 +55,16 @@ uvicorn main:app --reload
 - Docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 Frontend should call `http://127.0.0.1:8000/api/wardrobe/upload` (POST) and `http://127.0.0.1:8000/api/wardrobe` (GET).
+
+## 5. Run trend scraping locally (definitely-free MVP)
+
+Run the scraper/clustering on your machine (not via GitHub Actions yet):
+
+```bash
+cd backend
+python run_trends_local.py
+```
+
+This will scrape a small set of sources, extract trend candidates (Groq), cluster them (local embeddings + HDBSCAN), and insert clustered trends into Supabase.
+
+Then refresh your browser and open the `Trends` page to see results via `GET /api/trends`.

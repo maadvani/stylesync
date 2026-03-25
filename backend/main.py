@@ -5,7 +5,7 @@ Upload image → Cloudinary → HF caption → Groq JSON → Supabase → return
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import wardrobe, user as user_router, utility as utility_router, trends as trends_router
+from routers import wardrobe, user as user_router, utility as utility_router, trends as trends_router, outfits as outfits_router
 
 app = FastAPI(
     title="StyleSync API",
@@ -27,6 +27,7 @@ app.include_router(wardrobe.router, prefix="/api")
 app.include_router(user_router.router, prefix="/api")
 app.include_router(utility_router.router, prefix="/api")
 app.include_router(trends_router.router, prefix="/api")
+app.include_router(outfits_router.router, prefix="/api")
 
 
 @app.get("/health")

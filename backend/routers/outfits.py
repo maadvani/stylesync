@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from config import settings
 from services.outfit_generator import generate_outfits
 
 router = APIRouter(prefix="/outfits", tags=["outfits"])
@@ -23,13 +24,18 @@ class GenerateOutfitsBody(BaseModel):
     weather_temp: int | None = None
     weather_conditions: str | None = None
     vibe: str | None = None
+    engine: str | None = None
     candidate: CandidateItem
 
 
 @router.post("/generate")
-def generate(body: GenerateOutfitsBody):
+async def generate(body: GenerateOutfitsBody):
     try:
-        return generate_outfits(body.model_dump())
+        payload = body.model_dump()
+        engine = (payload.get("engine") or "").strip().lower()
+        if engine not in {"react", "rules"}:
+            payload["engine"] = "react" if settings.outfits_react_enabled else "rules"
+        return await generate_outfits(payload)
     except HTTPException:
         raise
     except Exception as e:

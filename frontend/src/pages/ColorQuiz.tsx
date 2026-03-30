@@ -2,71 +2,31 @@ import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import AppShell from '../components/AppShell'
 import { setColorSeason } from '../api/user'
+import rawQuestions from '../features/colorQuiz/questions.json'
+import { calculateScores, getDominantProfile } from '../features/colorQuiz/scoring'
+import { generateQuizResult } from '../features/colorQuiz/resultGenerator'
+import type { QuizQuestion } from '../features/colorQuiz/types'
 
-type Option = { label: string; warm?: number; cool?: number; light?: number; deep?: number }
-
-const QUESTIONS: { question: string; options: Option[] }[] = [
-  {
-    question: 'What is your natural hair color?',
-    options: [
-      { label: 'Blonde (golden, honey)', warm: 2 },
-      { label: 'Blonde (ash, platinum)', cool: 2 },
-      { label: 'Brown (golden, auburn)', warm: 1 },
-      { label: 'Brown (ash, cool tone)', cool: 1 },
-      { label: 'Black', deep: 2 },
-      { label: 'Red / ginger', warm: 3 },
-    ],
-  },
-  {
-    question: 'What do your wrist veins look like in natural light?',
-    options: [
-      { label: 'Greenish – warm undertone', warm: 3 },
-      { label: 'Bluish – cool undertone', cool: 3 },
-      { label: 'Hard to tell / mixed', warm: 1, cool: 1 },
-    ],
-  },
-  {
-    question: 'How does pure white look against your skin?',
-    options: [
-      { label: 'Harsh or washed out – I prefer cream/ivory', warm: 2 },
-      { label: 'Bright and flattering', cool: 2 },
-      { label: 'Both work okay', warm: 1, cool: 1 },
-    ],
-  },
-]
-
-// Map total scores to a season key (simplified 4 for MVP; expand to 12 later).
-function scoresToSeason(warm: number, cool: number, light: number, deep: number): string {
-  const isWarm = warm >= cool
-  const isLight = light > deep
-  if (isWarm && isLight) return 'warm_spring'
-  if (isWarm && !isLight) return 'soft_autumn'
-  if (!isWarm && isLight) return 'soft_summer'
-  return 'cool_winter'
-}
-
-const SEASON_LABELS: Record<string, string> = {
-  warm_spring: 'Warm Spring',
-  soft_autumn: 'Soft Autumn',
-  soft_summer: 'Soft Summer',
-  cool_winter: 'Cool Winter',
-}
+const QUESTIONS = rawQuestions as QuizQuestion[]
 
 function ColorQuiz() {
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
-  const [answers, setAnswers] = useState<Option[]>([])
+  const [answers, setAnswers] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [done, setDone] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const isResultStep = step >= QUESTIONS.length
   const progress = isResultStep ? 100 : ((step + 1) / QUESTIONS.length) * 100
 
-  const handleOption = (opt: Option) => {
+  const handleOption = (optionId: string) => {
     if (isResultStep) return
-    const next = answers.slice(0, step)
-    next[step] = opt
-    setAnswers([...next])
+    const currentQuestion = QUESTIONS[step]
+    if (!currentQuestion) return
+
+    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: optionId }))
+
     if (step + 1 < QUESTIONS.length) {
       setStep(step + 1)
     } else {
@@ -75,21 +35,16 @@ function ColorQuiz() {
     }
   }
 
-  const warm = answers.reduce((s, a) => s + (a.warm ?? 0), 0)
-  const cool = answers.reduce((s, a) => s + (a.cool ?? 0), 0)
-  const light = answers.reduce((s, a) => s + (a.light ?? 0), 0)
-  const deep = answers.reduce((s, a) => s + (a.deep ?? 0), 0)
-  const resultSeason = done ? scoresToSeason(warm, cool, light, deep) : null
-  const resultLabel = resultSeason ? SEASON_LABELS[resultSeason] ?? resultSeason : ''
-
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const totals = calculateScores(QUESTIONS, answers)
+  const dominantProfile = getDominantProfile(totals)
+  const result = done ? generateQuizResult(totals, dominantProfile) : null
 
   const handleSave = async () => {
-    if (!resultSeason) return
+    if (!result) return
     setSaveError(null)
     setSaving(true)
     try {
-      await setColorSeason(resultSeason)
+      await setColorSeason(result.seasonKey)
       navigate('/dashboard')
     } catch (e) {
       setSaving(false)
@@ -116,22 +71,33 @@ function ColorQuiz() {
 
         {!isResultStep && (
           <>
+            {(() => {
+              const currentQuestion = QUESTIONS[step]
+              if (!currentQuestion) return null
+              return (
+                <>
             <p className="text-xs text-gray-500 mb-1">Question {step + 1} of {QUESTIONS.length}</p>
             <p className="text-base font-medium text-gray-900 mb-4">
-              {QUESTIONS[step].question}
+              {currentQuestion.question}
             </p>
+            {currentQuestion.helperText && (
+              <p className="text-xs text-gray-500 mb-4">{currentQuestion.helperText}</p>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-              {QUESTIONS[step].options.map((opt) => (
+              {currentQuestion.options.map((opt) => (
                 <button
-                  key={opt.label}
+                  key={opt.id}
                   type="button"
-                  onClick={() => handleOption(opt)}
+                  onClick={() => handleOption(opt.id)}
                   className="px-4 py-3 rounded-2xl border border-gray-200 text-sm text-left text-gray-800 hover:border-pink-400 hover:bg-pink-50 transition"
                 >
                   {opt.label}
                 </button>
               ))}
             </div>
+                </>
+              )
+            })()}
             <button
               type="button"
               disabled={step === 0}
@@ -143,15 +109,34 @@ function ColorQuiz() {
           </>
         )}
 
-        {isResultStep && resultSeason && (
+        {isResultStep && result && (
           <div className="mb-6">
             <p className="text-xs text-pink-500 uppercase tracking-wider mb-2">Your result</p>
             <h2 className="text-2xl font-bold text-gray-900 mb-2" style={{ fontFamily: 'Georgia, serif' }}>
-              {resultLabel}
+              {result.title}
             </h2>
             <p className="text-sm text-gray-600 mb-6">
-              We'll use this palette to filter shopping and outfit recommendations. You can retake the quiz anytime.
+              {result.description}
             </p>
+
+            <div className="mb-6 rounded-2xl bg-pink-50 border border-pink-100 p-4">
+              <p className="text-xs font-semibold text-pink-700 uppercase tracking-wide mb-2">Why this works for you</p>
+              <div className="space-y-2">
+                {result.explanation.map((line) => (
+                  <p key={line} className="text-sm text-gray-700">{line}</p>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-6 rounded-2xl bg-gray-50 border border-gray-200 p-4">
+              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Styling tips</p>
+              <ul className="space-y-2 text-sm text-gray-700 list-disc pl-5">
+                {result.tips.map((tip) => (
+                  <li key={tip}>{tip}</li>
+                ))}
+              </ul>
+            </div>
+
             <div className="flex gap-3">
               <button
                 type="button"
@@ -164,7 +149,7 @@ function ColorQuiz() {
               </button>
               <button
                 type="button"
-                onClick={() => { setStep(0); setAnswers([]); setDone(false); setSaveError(null); }}
+                onClick={() => { setStep(0); setAnswers({}); setDone(false); setSaveError(null); }}
                 className="px-4 py-2 rounded-full text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition"
               >
                 Retake quiz

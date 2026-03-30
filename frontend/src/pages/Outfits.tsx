@@ -1,10 +1,8 @@
-import { useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import { useState } from 'react'
 import { generateOutfits, type CandidateItem, type OutfitCard } from '../api/outfits'
 
 function Outfits() {
-  const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [outfits, setOutfits] = useState<OutfitCard[] | null>(null)
@@ -20,6 +18,7 @@ function Outfits() {
   const [weatherTemp, setWeatherTemp] = useState<number | ''>('')
   const [weatherConditions, setWeatherConditions] = useState('partly cloudy')
   const [vibe, setVibe] = useState('modern')
+  const [engine, setEngine] = useState<'react' | 'rules'>('react')
 
   // Hypothetical purchase (candidate)
   const [candidateType, setCandidateType] = useState('top')
@@ -151,6 +150,11 @@ function Outfits() {
               Candidate type: <span className="font-semibold">{debug.candidate_type ?? '—'}</span>.
             </p>
           )}
+          {!!debug && (
+            <p className="text-[11px] text-gray-500">
+              Engine: <span className="font-semibold">{String((debug as Record<string, unknown>).engine ?? 'rules')}</span>
+            </p>
+          )}
 
           <button
             type="button"
@@ -178,6 +182,7 @@ function Outfits() {
                   vibe,
                   weather_temp: typeof weatherTemp === 'number' ? weatherTemp : null,
                   weather_conditions: weatherConditions,
+                  engine,
                   candidate,
                 }
                 const res = await generateOutfits(body)
@@ -194,6 +199,23 @@ function Outfits() {
           >
             {loading ? 'Generating…' : 'Generate 4 outfits'}
           </button>
+          <div className="flex items-center gap-2 text-xs text-gray-600 mt-2">
+            <span>Engine</span>
+            <button
+              type="button"
+              onClick={() => setEngine('react')}
+              className={`px-3 py-1 rounded-full border ${engine === 'react' ? 'bg-pink-50 border-pink-300 text-pink-700' : 'bg-white border-gray-200'}`}
+            >
+              ReAct
+            </button>
+            <button
+              type="button"
+              onClick={() => setEngine('rules')}
+              className={`px-3 py-1 rounded-full border ${engine === 'rules' ? 'bg-pink-50 border-pink-300 text-pink-700' : 'bg-white border-gray-200'}`}
+            >
+              Rules
+            </button>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -231,11 +253,16 @@ function Outfits() {
                   )}
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-gray-900">
-                    Matched wardrobe item: {o.matched_item?.type || 'Item'}
-                  </p>
+                  <p className="text-xs font-semibold text-gray-900">Outfit items</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {(o.item_details?.length ? o.item_details : [o.matched_item]).map((it, i2) => (
+                      <span key={`${i2}-${it?.id ?? 'x'}`} className="px-2 py-1 rounded-full text-[11px] bg-gray-100 text-gray-700">
+                        {it?.type || 'Item'}{it?.primary_color ? ` · ${it.primary_color}` : ''}
+                      </span>
+                    ))}
+                  </div>
                   <p className="text-[11px] text-gray-600 mt-1">{o.reasoning}</p>
-                  <div className="mt-3 grid sm:grid-cols-3 gap-3">
+                  <div className="mt-3 grid sm:grid-cols-5 gap-3">
                     <div>
                       <p className="text-[11px] text-gray-500">Color match</p>
                       <p className="text-xs font-semibold text-gray-900">{o.scores.color_match}</p>
@@ -248,7 +275,23 @@ function Outfits() {
                       <p className="text-[11px] text-gray-500">Coherence</p>
                       <p className="text-xs font-semibold text-gray-900">{o.scores.style_coherence}</p>
                     </div>
+                    <div>
+                      <p className="text-[11px] text-gray-500">Weather fit</p>
+                      <p className="text-xs font-semibold text-gray-900">{o.scores.weather_fit ?? '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-gray-500">Trend relevance</p>
+                      <p className="text-xs font-semibold text-gray-900">{o.scores.trend_relevance ?? '—'}</p>
+                    </div>
                   </div>
+                  {!!o.scores.judge && (
+                    <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-2 text-[11px] text-gray-700">
+                      <p className="font-semibold text-gray-900">LLM judge</p>
+                      <p>Overall: {o.scores.judge.overall_score ?? '—'}/10</p>
+                      <p>Occasion: {o.scores.judge.occasion_appropriateness?.score ?? '—'}/10</p>
+                      <p>Practicality: {o.scores.judge.practicality?.score ?? '—'}/10</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

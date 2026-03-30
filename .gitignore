@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*
+# Backend secrets saved without leading dot (match config.py second env path)
+backend/env
 
 # Auto-generated folders
 node_modules/

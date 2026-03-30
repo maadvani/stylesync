@@ -5,7 +5,15 @@ Upload image → Cloudinary → HF caption → Groq JSON → Supabase → return
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import wardrobe, user as user_router, utility as utility_router, trends as trends_router, outfits as outfits_router
+from config import settings
+from routers import (
+    wardrobe,
+    user as user_router,
+    utility as utility_router,
+    trends as trends_router,
+    outfits as outfits_router,
+    shopping as shopping_router,
+)
 
 app = FastAPI(
     title="StyleSync API",
@@ -28,6 +36,16 @@ app.include_router(user_router.router, prefix="/api")
 app.include_router(utility_router.router, prefix="/api")
 app.include_router(trends_router.router, prefix="/api")
 app.include_router(outfits_router.router, prefix="/api")
+app.include_router(shopping_router.router, prefix="/api")
+
+
+@app.get("/api/utility/ai-config")
+def utility_ai_config():
+    """
+    Declared on the app (not only the utility router) so a 404 here means
+    this process is not running the current StyleSync backend code.
+    """
+    return {"gemini_configured": bool(settings.gemini_api_key and settings.gemini_api_key.strip())}
 
 
 @app.get("/health")

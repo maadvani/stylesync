@@ -16,6 +16,22 @@ from dataclasses import dataclass
 from services import user_profile, wardrobe_db
 
 
+# When the vision model omits `seasons`, these types are treated as year-round staples.
+_YEAR_ROUND_TYPES = frozenset(
+    {"jeans", "pants", "shorts", "t-shirt", "shirt", "blouse", "sweater", "top"}
+)
+
+# Winter family seasons share high-contrast cool palette rules (MVP).
+_WINTER_SEASONS = frozenset(
+    {
+        "cool_winter",
+        "deep_winter",
+        "dark_winter",
+        "true_winter",
+        "bright_winter",
+    }
+)
+
 PAIRING_RULES: dict[str, list[str]] = {
     "top": ["pants", "jeans", "skirt", "shorts"],
     "t-shirt": ["pants", "jeans", "skirt", "shorts"],
@@ -29,7 +45,7 @@ PAIRING_RULES: dict[str, list[str]] = {
     "skirt": ["top", "t-shirt", "shirt", "blouse", "sweater"],
     "pants": ["top", "t-shirt", "shirt", "blouse", "sweater", "blazer", "jacket"],
     "jeans": ["top", "t-shirt", "shirt", "blouse", "sweater", "blazer", "jacket"],
-    "shorts": ["top", "t-shirt", "shirt", "blouse"],
+    "shorts": ["top", "t-shirt", "shirt", "blouse", "sweater"],
 }
 
 
@@ -41,6 +57,13 @@ def _norm_type(t: str | None) -> str:
     aliases = {
         "tee": "t-shirt",
         "tshirt": "t-shirt",
+        "tank": "t-shirt",
+        "tank_top": "t-shirt",
+        "camisole": "blouse",
+        "cardigan": "sweater",
+        "hoodie": "sweater",
+        "pullover": "sweater",
+        "polo": "shirt",
         "trousers": "pants",
         "slacks": "pants",
     }
@@ -84,8 +107,8 @@ def _color_match_score(color_season: str | None, item_color: str) -> float:
     elif season == "warm_spring":
         best = ["coral", "peach", "warm pink", "aqua", "turquoise", "cream"]
         avoid = ["charcoal", "black", "muddy brown"]
-    # Cool Winter: cool, high contrast
-    elif season == "cool_winter":
+    # Cool / deep / true winter: cool, high contrast
+    elif season in _WINTER_SEASONS:
         best = ["black", "white", "navy", "emerald", "ruby", "cobalt", "silver"]
         avoid = ["orange", "warm brown", "camel", "mustard"]
     else:
@@ -95,8 +118,23 @@ def _color_match_score(color_season: str | None, item_color: str) -> float:
         return 0.0
     if any(b in c for b in best):
         return 1.0
-    # neutrals
-    neutrals = ["black", "white", "grey", "gray", "beige", "cream", "navy", "brown"]
+    # neutrals (substring match; include denim / charcoal so tagged colors still score)
+    neutrals = [
+        "black",
+        "white",
+        "grey",
+        "gray",
+        "charcoal",
+        "beige",
+        "cream",
+        "navy",
+        "brown",
+        "indigo",
+        "denim",
+        "khaki",
+        "stone",
+        "slate",
+    ]
     if any(n in c for n in neutrals):
         return 0.8
     return 0.5
@@ -143,11 +181,44 @@ def outfit_potential(candidate: dict, wardrobe: list[dict]) -> int:
     return count
 
 
+def _type_pairable_wardrobe_count(candidate: dict, wardrobe: list[dict]) -> int:
+    """How many wardrobe pieces are the right garment category to pair (ignore formality/pattern)."""
+    c_type = _norm_type(candidate.get("type"))
+    compatible = set(PAIRING_RULES.get(c_type, []))
+    if not compatible:
+        return 0
+    n = 0
+    for w in wardrobe:
+        if _norm_type(w.get("type")) in compatible:
+            n += 1
+    return n
+
+
+def normalize_outfit_potential(outfits: int, candidate: dict, wardrobe: list[dict]) -> float:
+    """
+    Map raw pairing count to 0..1. Small digital closets: score vs how many pieces could
+    ever pair (type-level), not vs a fixed target of 30. Larger closets: also benefit from
+    a softer absolute scale (full credit at ~10 strict pairings).
+    """
+    eligible = _type_pairable_wardrobe_count(candidate, wardrobe)
+    if eligible > 0:
+        norm_relative = outfits / float(eligible)
+    else:
+        norm_relative = 0.0
+    norm_absolute = min(outfits / 10.0, 1.0)
+    return min(1.0, max(norm_relative, norm_absolute))
+
+
 def seasonal_versatility(candidate: dict) -> float:
     seasons = candidate.get("seasons") or []
     if not isinstance(seasons, list):
         return 0.5
     n = len({s.strip().lower() for s in seasons if isinstance(s, str) and s.strip()})
+    if n == 0:
+        # Model often omits seasons; basics are not "zero-season" items.
+        if _norm_type(candidate.get("type")) in _YEAR_ROUND_TYPES:
+            return 1.0
+        return 0.5
     return min(max(n / 4.0, 0.0), 1.0)
 
 
@@ -159,7 +230,7 @@ def score_candidate(candidate: dict) -> dict:
     color_season = user_profile.get_color_season()
 
     outfits = outfit_potential(candidate, wardrobe)
-    outfit_potential_norm = min(outfits / 30.0, 1.0)
+    outfit_potential_norm = normalize_outfit_potential(outfits, candidate, wardrobe)
     season_norm = seasonal_versatility(candidate)
     color_norm = _color_match_score(color_season, _norm_color(candidate.get("primary_color")))
 
@@ -189,4 +260,47 @@ def score_candidate(candidate: dict) -> dict:
         "cost_per_wear": cost_per_wear,
         "color_season": color_season,
     }
+
+
+# --- Additive API (does not change logic above) --------------------------------
+
+def calculate_outfit_potential(candidate: dict, wardrobe: list[dict]) -> int:
+    """Delegate to existing outfit potential; same behavior as before."""
+    return outfit_potential(candidate, wardrobe)
+
+
+def calculate_seasonal_versatility(candidate: dict) -> float:
+    """Delegate to existing seasonal versatility."""
+    return seasonal_versatility(candidate)
+
+
+def calculate_color_match(color_season: str | None, item_color: str) -> float:
+    """Delegate to existing color match helper."""
+    return _color_match_score(color_season, item_color)
+
+
+def calculate_trend_alignment(user_trends: list, wardrobe_analytics: dict) -> float:
+    """Placeholder aligned with score_candidate (reserved for future signals)."""
+    _ = (user_trends, wardrobe_analytics)
+    return 0.5
+
+
+def calculate_gap_filling(user_trends: list, wardrobe_analytics: dict) -> float:
+    """Placeholder aligned with score_candidate (reserved for future signals)."""
+    _ = (user_trends, wardrobe_analytics)
+    return 0.0
+
+
+def calculate_utility_score(
+    item: dict,
+    user_trends: list | None = None,
+    wardrobe_analytics: dict | None = None,
+) -> dict:
+    """
+    Same outputs as score_candidate(); extra args are reserved for future use
+    without changing weights or formulas (trend/gap still come from score_candidate).
+    """
+    _ = user_trends
+    _ = wardrobe_analytics
+    return score_candidate(item)
 

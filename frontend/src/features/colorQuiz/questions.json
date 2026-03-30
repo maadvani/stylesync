@@ -1,0 +1,74 @@
+[
+  {
+    "id": "jewelry_preference",
+    "question": "Which jewelry looks best on you?",
+    "options": [
+      { "id": "gold", "label": "Gold", "scores": { "undertone": { "warm": 2 } } },
+      { "id": "silver", "label": "Silver", "scores": { "undertone": { "cool": 2 } } },
+      { "id": "both", "label": "Both look good", "scores": { "undertone": { "neutral": 2 } } },
+      { "id": "not_sure", "label": "I'm not sure", "scores": {} }
+    ]
+  },
+  {
+    "id": "wrist_vein_check",
+    "question": "Look at the veins on your wrist in natural light. What color do they look like?",
+    "helperText": "Tip: Check in daylight for the most accurate answer",
+    "options": [
+      { "id": "blue_purple", "label": "Blue or purple", "scores": { "undertone": { "cool": 3 } } },
+      { "id": "green", "label": "Green", "scores": { "undertone": { "warm": 3 } } },
+      { "id": "mixed", "label": "A mix of both", "scores": { "undertone": { "neutral": 2 } } },
+      { "id": "not_sure", "label": "I'm not sure", "scores": {} }
+    ]
+  },
+  {
+    "id": "compliment_magnet",
+    "question": "What colors do people compliment you in the most?",
+    "options": [
+      { "id": "warm_colors", "label": "Warm colors (mustard, rust, olive)", "scores": { "undertone": { "warm": 2 } } },
+      { "id": "cool_colors", "label": "Cool colors (blue, purple, emerald)", "scores": { "undertone": { "cool": 2 } } },
+      { "id": "soft_light", "label": "Soft/light colors (pastels, dusty pink)", "scores": { "clarity": { "muted": 2 } } },
+      { "id": "dark_colors", "label": "Dark colors (black, navy, burgundy)", "scores": { "depth": { "deep": 2 } } }
+    ]
+  },
+  {
+    "id": "washed_out_check",
+    "question": "Which colors make you look tired or dull?",
+    "options": [
+      { "id": "beige_earthy", "label": "Beige / earthy tones", "scores": { "undertone": { "cool": 1 } } },
+      { "id": "black_stark_white", "label": "Black / stark white", "scores": { "clarity": { "muted": 1 } } },
+      { "id": "light_pastels", "label": "Light pastels", "scores": { "depth": { "deep": 1 } } },
+      { "id": "bright_neon", "label": "Bright/neon colors", "scores": { "clarity": { "muted": 1 } } }
+    ]
+  },
+  {
+    "id": "natural_hair_color",
+    "question": "What is your natural hair color?",
+    "options": [
+      { "id": "blonde", "label": "Blonde", "scores": { "depth": { "light": 2 } } },
+      { "id": "light_brown", "label": "Light brown", "scores": { "depth": { "medium": 2 } } },
+      { "id": "dark_brown", "label": "Dark brown", "scores": { "depth": { "deep": 2 } } },
+      { "id": "black", "label": "Black", "scores": { "depth": { "deep": 3 } } },
+      { "id": "red_auburn", "label": "Red / auburn", "scores": { "undertone": { "warm": 2 }, "depth": { "medium": 1 } } }
+    ]
+  },
+  {
+    "id": "sun_reaction",
+    "question": "How does your skin react to the sun?",
+    "options": [
+      { "id": "tan_easily", "label": "I tan easily", "scores": { "undertone": { "warm": 1 }, "depth": { "deep": 1 } } },
+      { "id": "burn_then_tan", "label": "I burn first, then tan", "scores": { "undertone": { "neutral": 1 } } },
+      { "id": "mostly_burn", "label": "I mostly burn", "scores": { "undertone": { "cool": 1 }, "depth": { "light": 1 } } },
+      { "id": "no_change", "label": "No major change", "scores": { "undertone": { "neutral": 1 } } }
+    ]
+  },
+  {
+    "id": "overall_look",
+    "question": "Which description feels closest to you?",
+    "options": [
+      { "id": "high_contrast", "label": "My features are very contrasting (e.g., dark hair + lighter skin)", "scores": { "contrast": { "high": 3 }, "clarity": { "bright": 1 } } },
+      { "id": "medium_contrast", "label": "There's some contrast, but not extreme", "scores": { "contrast": { "medium": 2 } } },
+      { "id": "low_contrast", "label": "Everything looks soft and blended", "scores": { "contrast": { "low": 3 }, "clarity": { "muted": 1 } } },
+      { "id": "not_sure", "label": "I'm not sure", "scores": {} }
+    ]
+  }
+]

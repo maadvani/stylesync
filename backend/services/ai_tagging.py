@@ -29,9 +29,14 @@ DEFAULT_ATTRIBUTES = {
     "style_tags": ["casual"],
 }
 
-GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 GEMINI_MAX_INLINE_BYTES = 7 * 1024 * 1024  # 7MB inline limit commonly enforced
+
+
+def _gemini_primary_model_url() -> str:
+    raw = (getattr(settings, "gemini_model", None) or "").strip()
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    mid = parts[0] if parts else "gemini-2.5-flash"
+    return f"https://generativelanguage.googleapis.com/v1beta/models/{mid}:generateContent"
 
 
 def get_caption(image_bytes: bytes) -> str | None:
@@ -240,23 +245,36 @@ Output must be valid JSON and MUST fill every key (use null where allowed)."""
     try:
         with httpx.Client(timeout=45.0) as client:
             r = client.post(
-                GEMINI_API_URL,
+                _gemini_primary_model_url(),
                 params={"key": settings.gemini_api_key},
                 json=payload,
             )
             r.raise_for_status()
             data = r.json()
             # Typical shape: { candidates: [ { content: { parts: [ { text: "..." } ] } } ] }
-            text = None
+            texts: list[str] = []
             candidates = data.get("candidates") if isinstance(data, dict) else None
-            if candidates and isinstance(candidates, list):
-                content = candidates[0].get("content") if candidates[0] else None
+            if candidates and isinstance(candidates, list) and candidates[0]:
+                content = candidates[0].get("content")
                 parts = content.get("parts") if isinstance(content, dict) else None
-                if parts and isinstance(parts, list) and parts[0]:
-                    text = parts[0].get("text")
-            if not text:
+                if parts and isinstance(parts, list):
+                    for p in parts:
+                        if not isinstance(p, dict):
+                            continue
+                        if p.get("thought") is True:
+                            continue
+                        t = p.get("text")
+                        if isinstance(t, str) and t.strip():
+                            texts.append(t.strip())
+            if not texts:
                 return None
-            return json.loads(_strip_json_fences(text))
+            # Final part is usually the JSON answer after optional thought parts.
+            for chunk in reversed(texts):
+                try:
+                    return json.loads(_strip_json_fences(chunk))
+                except json.JSONDecodeError:
+                    continue
+            return None
     except Exception:
         return None
 

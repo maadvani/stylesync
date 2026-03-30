@@ -14,11 +14,29 @@ export type CandidateItem = {
 
 export type OutfitCard = {
   items: string[]
+  item_details?: Array<{
+    id: string
+    image_url?: string
+    type?: string
+    primary_color?: string | null
+    pattern?: string | null
+    formality?: number | null
+  }>
   reasoning: string
   scores: {
     color_match: number
     seasonal_versatility: number
     style_coherence: number
+    weather_fit?: number
+    trend_relevance?: number
+    judge?: {
+      style_coherence?: { score: number; reasoning: string }
+      color_harmony?: { score: number; reasoning: string }
+      occasion_appropriateness?: { score: number; reasoning: string }
+      trend_relevance?: { score: number; reasoning: string }
+      practicality?: { score: number; reasoning: string }
+      overall_score?: number
+    }
   }
   overall_score: number
   matched_item?: {
@@ -36,6 +54,7 @@ export async function generateOutfits(body: {
   weather_temp?: number | null
   weather_conditions?: string | null
   vibe?: string | null
+  engine?: "react" | "rules"
   candidate: CandidateItem
 }): Promise<{ outfits: OutfitCard[]; debug?: Record<string, unknown> }> {
   const r = await fetch(`${BASE}/api/outfits/generate`, {

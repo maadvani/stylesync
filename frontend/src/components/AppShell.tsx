@@ -10,7 +10,6 @@ type AppShellProps = {
 const navItems = [
   { label: 'Wardrobe', to: '/wardrobe' },
   { label: 'Color', to: '/color-quiz' },
-  { label: 'Trends', to: '/trends' },
   { label: 'Shopping', to: '/shopping' },
   { label: 'Outfits', to: '/outfits' },
   { label: 'Analytics', to: '/analytics' },

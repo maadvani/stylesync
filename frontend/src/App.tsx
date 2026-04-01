@@ -5,7 +5,6 @@ import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import Wardrobe from './pages/Wardrobe'
 import ColorQuiz from './pages/ColorQuiz'
-import Trends from './pages/Trends'
 import Shopping from './pages/Shopping'
 import Outfits from './pages/Outfits'
 import Analytics from './pages/Analytics'
@@ -19,7 +18,6 @@ function App() {
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/wardrobe" element={<Wardrobe />} />
       <Route path="/color-quiz" element={<ColorQuiz />} />
-      <Route path="/trends" element={<Trends />} />
       <Route path="/shopping" element={<Shopping />} />
       <Route path="/outfits" element={<Outfits />} />
       <Route path="/analytics" element={<Analytics />} />

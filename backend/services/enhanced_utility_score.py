@@ -97,7 +97,7 @@ def _heuristic_ai_explanation(
     return {
         "summary": label,
         "reasoning": [
-            f"Utility model ~{s:.0f}/100 (wardrobe + palette rules, trend signal is still a placeholder).",
+            f"Utility model ~{s:.0f}/100 (wardrobe + palette rules).",
             line2,
             f"{cpw_line} Google AI did not return a usable JSON summary this time — if this repeats, check server WARNING logs and GEMINI_MODEL.",
         ],
@@ -399,7 +399,9 @@ async def enhanced_utility_score(
     Wraps calculate_utility_score (unchanged base score), adds preference adjustment + AI explanation.
     """
     _ = wardrobe
-    base_result = calculate_utility_score(item, user_trends, wardrobe_analytics)
+    _ = user_trends
+    _ = wardrobe_analytics
+    base_result = calculate_utility_score(item)
     adjusted_score = adjust_score_with_preferences(base_result["score"], item, user_preferences)
     ai_explanation = await generate_ai_explanation(
         item, base_result, user_profile, adjusted_score=adjusted_score

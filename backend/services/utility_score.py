@@ -234,16 +234,11 @@ def score_candidate(candidate: dict) -> dict:
     season_norm = seasonal_versatility(candidate)
     color_norm = _color_match_score(color_season, _norm_color(candidate.get("primary_color")))
 
-    # Trend alignment + gap filling: placeholders for MVP.
-    trend_alignment = 0.5
-    gap_filling = 0.0
-
+    # Weight outfit potential, seasonal versatility, and color match only (sums to 1.0).
     utility = (
-        outfit_potential_norm * 0.35
-        + season_norm * 0.20
-        + color_norm * 0.20
-        + trend_alignment * 0.15
-        + gap_filling * 0.10
+        outfit_potential_norm * 0.45
+        + season_norm * 0.275
+        + color_norm * 0.275
     ) * 100.0
 
     price = float(candidate.get("price") or 0.0)
@@ -255,8 +250,6 @@ def score_candidate(candidate: dict) -> dict:
         "outfit_potential_normalized": round(outfit_potential_norm, 2),
         "seasonal_versatility": round(season_norm, 2),
         "color_match": round(color_norm, 2),
-        "trend_alignment": round(trend_alignment, 2),
-        "gap_filling": round(gap_filling, 2),
         "cost_per_wear": cost_per_wear,
         "color_season": color_season,
     }
@@ -279,28 +272,7 @@ def calculate_color_match(color_season: str | None, item_color: str) -> float:
     return _color_match_score(color_season, item_color)
 
 
-def calculate_trend_alignment(user_trends: list, wardrobe_analytics: dict) -> float:
-    """Placeholder aligned with score_candidate (reserved for future signals)."""
-    _ = (user_trends, wardrobe_analytics)
-    return 0.5
-
-
-def calculate_gap_filling(user_trends: list, wardrobe_analytics: dict) -> float:
-    """Placeholder aligned with score_candidate (reserved for future signals)."""
-    _ = (user_trends, wardrobe_analytics)
-    return 0.0
-
-
-def calculate_utility_score(
-    item: dict,
-    user_trends: list | None = None,
-    wardrobe_analytics: dict | None = None,
-) -> dict:
-    """
-    Same outputs as score_candidate(); extra args are reserved for future use
-    without changing weights or formulas (trend/gap still come from score_candidate).
-    """
-    _ = user_trends
-    _ = wardrobe_analytics
+def calculate_utility_score(item: dict) -> dict:
+    """Same outputs as score_candidate() (used by enhanced scoring)."""
     return score_candidate(item)
 

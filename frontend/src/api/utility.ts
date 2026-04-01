@@ -19,8 +19,6 @@ export type UtilityScore = {
   outfit_potential_normalized: number;
   seasonal_versatility: number;
   color_match: number;
-  trend_alignment: number;
-  gap_filling: number;
   cost_per_wear: number | null;
   color_season: string | null;
 };

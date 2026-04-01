@@ -5,6 +5,7 @@ AI tagging: image → caption (HF Inference API) → structured JSON (Groq).
 import base64
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -30,6 +31,99 @@ DEFAULT_ATTRIBUTES = {
 }
 
 GEMINI_MAX_INLINE_BYTES = 7 * 1024 * 1024  # 7MB inline limit commonly enforced
+_EXAMPLE_DIR = Path(__file__).resolve().parent / "few_shot_examples"
+_MIME_BY_EXT = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+}
+
+# Hybrid few-shot: same code path as generic few-shot, but pick images for *your* failure cases.
+# Put files under few_shot_examples/ (or use an absolute path). Missing files are skipped.
+# Edit this list when you log a bad tag: save that photo here, set JSON to the correct labels, restart backend.
+FEW_SHOT_EXAMPLES: list[tuple[str, str]] = [
+    (
+        "edge_slipdress.jpg",
+        '{"type":"dress","primary_color":"ivory","secondary_color":null,"pattern":"solid","formality":3,"seasons":["spring","summer"],"material":"satin","style_tags":["romantic","minimal","trendy"]}',
+    ),
+    (
+        "edge_longblazer.jpg",
+        '{"type":"blazer","primary_color":"black","secondary_color":null,"pattern":"solid","formality":4,"seasons":["fall","winter","spring"],"material":"wool blend","style_tags":["classic","formal","preppy"]}',
+    ),
+    (
+        "edge_shacket.jpg",
+        '{"type":"jacket","primary_color":"tan","secondary_color":null,"pattern":"solid","formality":2,"seasons":["fall","spring"],"material":"cotton","style_tags":["casual","trendy","classic"]}',
+    ),
+]
+
+
+def _load_example(filename: str) -> tuple[str, str] | None:
+    """
+    Load a few-shot example image and return (base64, mime_type).
+    Returns None when file is missing/unreadable.
+    """
+    raw_path = Path(filename)
+    path = raw_path if raw_path.is_absolute() else (_EXAMPLE_DIR / filename)
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        raw = path.read_bytes()
+    except Exception:
+        return None
+    ext = path.suffix.lower().lstrip(".")
+    mime = _MIME_BY_EXT.get(ext, "image/jpeg")
+    return base64.b64encode(raw).decode("utf-8"), mime
+
+
+def _preload_few_shot_turns() -> list[dict[str, Any]]:
+    turns: list[dict[str, Any]] = []
+    for filename, expected_json in FEW_SHOT_EXAMPLES:
+        loaded = _load_example(filename)
+        if loaded is None:
+            continue
+        ex_b64, ex_mime = loaded
+        turns.append(
+            {
+                "role": "user",
+                "parts": [
+                    {"inline_data": {"mime_type": ex_mime, "data": ex_b64}},
+                    {"text": "Tag this item."},
+                ],
+            }
+        )
+        turns.append({"role": "model", "parts": [{"text": expected_json}]})
+    return turns
+
+
+_FEW_SHOT_TURNS = _preload_few_shot_turns()
+
+
+def _build_few_shot_contents(prompt: str, b64: str, mime_type: str) -> list[dict[str, Any]]:
+    """
+    Build Gemini multi-turn conversation with optional few-shot examples.
+    """
+    contents: list[dict[str, Any]] = [
+        {"role": "user", "parts": [{"text": prompt}]},
+        {
+            "role": "model",
+            "parts": [{"text": "Understood. I will return only valid JSON following the requested schema."}],
+        },
+    ]
+
+    if _FEW_SHOT_TURNS:
+        contents.extend(_FEW_SHOT_TURNS)
+
+    contents.append(
+        {
+            "role": "user",
+            "parts": [
+                {"inline_data": {"mime_type": mime_type, "data": b64}},
+                {"text": "Tag this item."},
+            ],
+        }
+    )
+    return contents
 
 
 def _gemini_primary_model_url() -> str:
@@ -176,66 +270,35 @@ def _gemini_image_to_json(
         else "User did not specify a target item."
     )
 
-    prompt = f"""You are an expert fashion analyst. Look carefully at the image and extract wardrobe attributes.
+    prompt = f"""You are a wardrobe cataloging system. Analyze the clothing item in this image and return a JSON object.
 
-CRITICAL: Return ONLY a single valid JSON object. No markdown, no commentary, no extra keys.
+Return ONLY valid JSON. No markdown. No explanation. No extra keys.
 
 {targets_clause}
 
 If target item(s) are provided:
-- You MUST output one wardrobe JSON per target item, in the same order as targets.
-- Ignore non-target garments and ignore the background/person.
-- If a target is not visible, still output an item for it with best-effort guesses and use \"other\"/\"unknown\" where needed.
+- Output one wardrobe JSON per target item, in the same order as targets, inside: {{ "items": [ ... ] }}.
+- Ignore non-target garments.
 
-If no target item(s) are provided, decide the PRIMARY ITEM to tag:
-- If multiple garments are visible (e.g., a person wearing an outfit), choose the SINGLE most salient item that a user would add to their wardrobe catalog (usually the main garment: dress / coat / pants / top).
-- Do NOT tag the person. Do NOT tag the background.
-- If the item is a one-piece covering torso and extending down (even with straps), it's usually a "dress" (not "top").
+If multiple garments are visible, tag the single most prominent one (the "hero" item a shopper would click on).
 
-Output format:
-- If targets provided: return {{ "items": [ <item1>, <item2>, ... ] }} where each item follows the schema below.
-- If no targets: return a single item object following the schema below.
-
-Item schema (exact keys):
+Schema:
 {{
   "type": "top|t-shirt|shirt|blouse|sweater|jacket|coat|blazer|dress|skirt|pants|jeans|shorts|shoes|bag|accessory|other",
-  "primary_color": "specific color name (e.g., ivory, cream, navy, burgundy, forest green). Avoid generic words like 'neutral'.",
-  "secondary_color": null,
+  "primary_color": "<specific color, e.g. ivory, navy, forest green — never 'neutral'>",
+  "secondary_color": "<specific color or null>",
   "pattern": "solid|stripes|floral|geometric|plaid|polka_dot|animal_print|graphic|other",
-  "formality": 1-5,
+  "formality": <1=gym, 2=casual, 3=smart casual, 4=business, 5=formal>,
   "seasons": ["spring","summer","fall","winter"],
-  "material": "free text material name (e.g., cotton, denim, silk, satin, linen, wool, knit, lace, leather, chiffon). If unsure use \\"unknown\\".",
-  "style_tags": ["minimal","classic","trendy","romantic","bohemian","streetwear","preppy","athleisure","formal","casual"]
+  "material": "<fabric name or 'unknown'>",
+  "style_tags": ["<tags from: minimal|classic|trendy|romantic|bohemian|streetwear|preppy|athleisure|formal|casual>"]
 }}
 
-Heuristics (use them):
-- type:
-  - dress: one-piece (bodice + skirt) worn as a single garment.
-  - skirt: separate bottom garment without leg separation.
-  - pants/jeans/shorts: leg separation; jeans typically denim.
-  - blazer/coat/jacket: outerwear with structure/lapels; coat is heavier/longer.
-- primary_color: choose the dominant visible color of the primary item (ignore skin/hair/background).
-- pattern: if the fabric has repeated motifs, choose the closest category; if uncertain, use \"other\" (not \"solid\").
-- seasons: infer from fabric weight + coverage:
-  - light/airy fabrics and sleeveless → spring/summer.
-  - heavy knits/wool/coat → fall/winter.
-  - If truly year-round basics, include all.
-- formality:
-  1 gym, 2 casual, 3 smart casual, 4 business, 5 formal.
-  Examples: sundress=2-3, cocktail dress=4, evening gown=5, blazer=3-4.
-
-Output must be valid JSON and MUST fill every key (use null where allowed)."""
+Fill every field. Use null only for secondary_color."""
 
     b64 = base64.b64encode(image_bytes).decode("utf-8")
     payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt},
-                    {"inline_data": {"mime_type": mime_type, "data": b64}},
-                ]
-            }
-        ],
+        "contents": _build_few_shot_contents(prompt, b64, mime_type),
         "generationConfig": {
             "temperature": 0.1,
             "maxOutputTokens": 512,

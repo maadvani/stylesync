@@ -528,15 +528,6 @@ function Shopping() {
                     <span className="text-gray-700">Color match</span>
                     <span className="font-semibold tabular-nums">{pct01(result.breakdown?.color_match)}</span>
                   </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-gray-700 shrink-0">
-                      Trend alignment
-                      <span className="block text-[11px] font-normal text-gray-500">
-                        MVP placeholder (not from live trends yet)
-                      </span>
-                    </span>
-                    <span className="font-semibold tabular-nums">{pct01(result.breakdown?.trend_alignment)}</span>
-                  </div>
                 </div>
 
                 {recPack?.configured && (

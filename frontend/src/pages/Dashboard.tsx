@@ -17,12 +17,6 @@ const features = [
     route: '/color-quiz',
   },
   {
-    title: 'Daily Trend Intelligence',
-    description: 'See which runway and street trends your current closet already covers.',
-    cta: 'View trends',
-    route: '/trends',
-  },
-  {
     title: 'Shopping Intelligence',
     description: 'Score new pieces on outfit potential, cost-per-wear, and closet fit.',
     cta: 'Shop smarter',
@@ -62,7 +56,7 @@ function Dashboard() {
   return (
     <AppShell
       title="Welcome to your StyleSync studio"
-      subtitle="Digitize your closet, discover your colors, track live trends, and test every purchase with a utility score before you buy."
+      subtitle="Digitize your closet, discover your colors, and test every purchase with a utility score before you buy."
     >
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6 mb-6">
         <div className="rounded-2xl bg-pink-50/70 border border-pink-100 px-5 py-4 flex-1">

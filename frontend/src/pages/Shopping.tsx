@@ -489,6 +489,12 @@ function Shopping() {
                     {result.adjusted_score !== result.score && (
                       <p className="text-xs text-gray-500">Base score: {result.score}</p>
                     )}
+                    {result.preference_adjusted_score != null &&
+                      result.preference_adjusted_score !== result.adjusted_score && (
+                        <p className="text-xs text-gray-500">
+                          Before price check: {result.preference_adjusted_score}
+                        </p>
+                      )}
                     <p className="text-xs text-gray-500">
                       Color season:{' '}
                       <span className="font-semibold">{result.breakdown?.color_season ?? '—'}</span>
@@ -528,6 +534,25 @@ function Shopping() {
                     <span className="text-gray-700">Color match</span>
                     <span className="font-semibold tabular-nums">{pct01(result.breakdown?.color_match)}</span>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-700">Price-value adjustment</span>
+                    <span
+                      className={`font-semibold tabular-nums ${
+                        (result.breakdown?.price_value_penalty ?? 0) > 0 ? 'text-red-600' : 'text-emerald-700'
+                      }`}
+                    >
+                      {(() => {
+                        const p = result.breakdown?.price_value_penalty ?? 0
+                        return p > 0 ? `-${p.toFixed(1)}` : '0.0'
+                      })()}
+                    </span>
+                  </div>
+                  {result.breakdown?.expensive_for_value && (
+                    <div className="text-[11px] text-red-700">
+                      This item is expensive for predicted reuse. Target cost-per-wear is about $
+                      {result.breakdown?.max_reasonable_cpw ?? '—'} for this score band.
+                    </div>
+                  )}
                 </div>
 
                 {recPack?.configured && (

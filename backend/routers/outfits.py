@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from config import settings
 from services.outfit_generator import generate_outfits
 
 router = APIRouter(prefix="/outfits", tags=["outfits"])
@@ -32,9 +31,8 @@ class GenerateOutfitsBody(BaseModel):
 async def generate(body: GenerateOutfitsBody):
     try:
         payload = body.model_dump()
-        engine = (payload.get("engine") or "").strip().lower()
-        if engine not in {"react", "rules"}:
-            payload["engine"] = "react" if settings.outfits_react_enabled else "rules"
+        # LLM-first mode for outfit generation.
+        payload["engine"] = "react"
         return await generate_outfits(payload)
     except HTTPException:
         raise

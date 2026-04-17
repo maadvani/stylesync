@@ -62,6 +62,36 @@ ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_SIZE_MB = 10
 
 
+def _tag_image_for_utility(raw: bytes, mime_type: str) -> dict:
+    """
+    Use both taggers and keep the richer result.
+    Gemini is usually better, but HF+Groq can be more stable on some inputs.
+    """
+    gemini = ai_tagging.recognize_clothing_gemini(raw, mime_type=mime_type)
+    classic = ai_tagging.recognize_clothing(raw)
+
+    def _richness(attrs: dict) -> int:
+        score = 0
+        t = str(attrs.get("type") or "").strip().lower()
+        if t and t not in {"top", "other"}:
+            score += 2
+        c = str(attrs.get("primary_color") or "").strip().lower()
+        if c and c not in {"neutral", "unknown"}:
+            score += 2
+        seasons = attrs.get("seasons")
+        if isinstance(seasons, list) and len([s for s in seasons if isinstance(s, str) and s.strip()]) > 0:
+            score += 1
+        mat = str(attrs.get("material") or "").strip().lower()
+        if mat and mat != "unknown":
+            score += 1
+        tags = attrs.get("style_tags")
+        if isinstance(tags, list) and len(tags) > 0:
+            score += 1
+        return score
+
+    return gemini if _richness(gemini) >= _richness(classic) else classic
+
+
 @router.post("/score")
 def score(body: CandidateItem):
     try:
@@ -92,8 +122,7 @@ async def score_from_image(
     if size_mb > MAX_SIZE_MB:
         raise HTTPException(status_code=400, detail=f"File too large (max {MAX_SIZE_MB} MB).")
 
-    # AI tagging already returns the candidate schema the utility scorer expects.
-    attrs = ai_tagging.recognize_clothing(raw)
+    attrs = _tag_image_for_utility(raw, mime_type=file.content_type or "image/jpeg")
     attrs["price"] = price_f
 
     try:
@@ -123,7 +152,7 @@ async def enhanced_from_image(
     if size_mb > MAX_SIZE_MB:
         raise HTTPException(status_code=400, detail=f"File too large (max {MAX_SIZE_MB} MB).")
 
-    attrs = ai_tagging.recognize_clothing(raw)
+    attrs = _tag_image_for_utility(raw, mime_type=file.content_type or "image/jpeg")
     attrs["price"] = price_f
 
     profile: dict = {}

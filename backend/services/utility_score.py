@@ -87,8 +87,9 @@ def _color_match_score(color_season: str | None, item_color: str) -> float:
     Minimal MVP mapping. We can expand to 12 seasons + hex matching later.
     """
     c = item_color
-    if not c:
-        return 0.5
+    if not c or c in {"neutral", "unknown", "n/a"}:
+        # Unknown color should not always collapse to the same middle score.
+        return 0.6
 
     # Simple rules: keep it lightweight; we can replace with full palettes.json later.
     if color_season in (None, ""):
@@ -137,6 +138,77 @@ def _color_match_score(color_season: str | None, item_color: str) -> float:
     ]
     if any(n in c for n in neutrals):
         return 0.8
+    # Tone families for less binary matching when color names are descriptive.
+    cool_family = {
+        "blue",
+        "navy",
+        "indigo",
+        "teal",
+        "emerald",
+        "purple",
+        "violet",
+        "lavender",
+        "berry",
+        "fuchsia",
+        "pink",
+        "magenta",
+        "silver",
+    }
+    warm_family = {
+        "orange",
+        "coral",
+        "peach",
+        "yellow",
+        "mustard",
+        "gold",
+        "camel",
+        "beige",
+        "tan",
+        "cream",
+        "olive",
+        "khaki",
+        "rust",
+        "terracotta",
+        "brown",
+    }
+    muted_modifiers = {"dusty", "muted", "soft", "smoky", "ash"}
+    bright_modifiers = {"bright", "vivid", "electric", "neon", "clear", "hot"}
+    deep_modifiers = {"deep", "dark", "rich"}
+
+    has_cool = any(t in c for t in cool_family)
+    has_warm = any(t in c for t in warm_family)
+    has_muted = any(t in c for t in muted_modifiers)
+    has_bright = any(t in c for t in bright_modifiers)
+    has_deep = any(t in c for t in deep_modifiers)
+
+    if season in _WINTER_SEASONS:
+        if has_cool and (has_bright or has_deep):
+            return 0.9
+        if has_cool:
+            return 0.7
+        if has_warm:
+            return 0.35
+    elif season == "soft_summer":
+        if has_cool and has_muted:
+            return 0.9
+        if has_cool:
+            return 0.75
+        if has_warm and not has_muted:
+            return 0.35
+    elif season == "soft_autumn":
+        if has_warm and has_muted:
+            return 0.9
+        if has_warm:
+            return 0.75
+        if has_cool and has_bright:
+            return 0.3
+    elif season == "warm_spring":
+        if has_warm and has_bright:
+            return 0.9
+        if has_warm:
+            return 0.75
+        if has_cool and has_deep:
+            return 0.35
     return 0.5
 
 
@@ -213,12 +285,55 @@ def seasonal_versatility(candidate: dict) -> float:
     seasons = candidate.get("seasons") or []
     if not isinstance(seasons, list):
         return 0.5
-    n = len({s.strip().lower() for s in seasons if isinstance(s, str) and s.strip()})
+    normalized = {s.strip().lower() for s in seasons if isinstance(s, str) and s.strip()}
+    n = len(normalized)
     if n == 0:
-        # Model often omits seasons; basics are not "zero-season" items.
-        if _norm_type(candidate.get("type")) in _YEAR_ROUND_TYPES:
-            return 1.0
+        # Model sometimes omits seasons; infer a realistic range from type/material.
+        t = _norm_type(candidate.get("type"))
+        material = str(candidate.get("material") or "").strip().lower()
+        if t in {"coat", "sweater"}:
+            return 0.5
+        if t in {"shorts", "dress"}:
+            return 0.5
+        if t in _YEAR_ROUND_TYPES:
+            if any(k in material for k in ("wool", "cashmere", "fleece", "down")):
+                return 0.5
+            if any(k in material for k in ("linen", "chiffon", "satin", "silk")):
+                return 0.5
+            return 0.75
         return 0.5
+    # Guard against model/default artifacts where every item is tagged as all seasons.
+    # If seasons are exactly all four and metadata is low-signal, infer a tighter season set.
+    if normalized == {"spring", "summer", "fall", "winter"}:
+        t = _norm_type(candidate.get("type"))
+        material = str(candidate.get("material") or "").strip().lower()
+        inferred_by_type: dict[str, set[str]] = {
+            "coat": {"fall", "winter"},
+            "jacket": {"spring", "fall", "winter"},
+            "blazer": {"spring", "fall", "winter"},
+            "sweater": {"fall", "winter"},
+            "shorts": {"spring", "summer"},
+            "skirt": {"spring", "summer", "fall"},
+            "dress": {"spring", "summer"},
+            "blouse": {"spring", "summer", "fall"},
+            "shirt": {"spring", "summer", "fall"},
+            "t-shirt": {"spring", "summer", "fall"},
+            "top": {"spring", "summer", "fall"},
+            "pants": {"spring", "summer", "fall", "winter"},
+            "jeans": {"spring", "summer", "fall", "winter"},
+            "shoes": {"spring", "summer", "fall", "winter"},
+        }
+        inferred = set(inferred_by_type.get(t, {"spring", "summer", "fall", "winter"}))
+
+        # Material can expand/restrict inferred usage.
+        if any(k in material for k in ("wool", "fleece", "cashmere", "down", "tweed", "corduroy")):
+            inferred = inferred.intersection({"fall", "winter"}) or {"fall", "winter"}
+        elif any(k in material for k in ("linen", "chiffon", "satin", "silk")):
+            inferred = inferred.intersection({"spring", "summer", "fall"}) or {"spring", "summer"}
+        elif any(k in material for k in ("cotton", "denim", "jersey")):
+            inferred = inferred.intersection({"spring", "summer", "fall"}) or {"spring", "summer", "fall"}
+
+        n = len(inferred)
     return min(max(n / 4.0, 0.0), 1.0)
 
 

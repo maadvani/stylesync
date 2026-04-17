@@ -87,6 +87,10 @@ def list_wardrobe(
 ):
     """List wardrobe items for the user (MVP: default user if user_id omitted)."""
     items = wardrobe_db.list_wardrobe_items(user_id)
+    if not user_id and not items:
+        # MVP fallback: if legacy rows were inserted under different user IDs,
+        # show them so users can recover previously uploaded photos.
+        items = wardrobe_db.list_all_wardrobe_items()
     return {"items": items}
 
 

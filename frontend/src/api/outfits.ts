@@ -54,7 +54,7 @@ export async function generateOutfits(body: {
   weather_temp?: number | null
   weather_conditions?: string | null
   vibe?: string | null
-  engine?: "react" | "rules"
+  engine?: "react"
   candidate: CandidateItem
 }): Promise<{ outfits: OutfitCard[]; debug?: Record<string, unknown> }> {
   const r = await fetch(`${BASE}/api/outfits/generate`, {

@@ -18,7 +18,6 @@ function Outfits() {
   const [weatherTemp, setWeatherTemp] = useState<number | ''>('')
   const [weatherConditions, setWeatherConditions] = useState('partly cloudy')
   const [vibe, setVibe] = useState('modern')
-  const [engine, setEngine] = useState<'react' | 'rules'>('react')
 
   // Hypothetical purchase (candidate)
   const [candidateType, setCandidateType] = useState('top')
@@ -30,8 +29,8 @@ function Outfits() {
 
   return (
     <AppShell
-      title="Daily outfit generation"
-      subtitle="MVP: test a hypothetical purchase against your wardrobe. We generate 4 outfit matches using compatibility + your saved color season."
+      title="Daily outfit recommendation"
+      subtitle="LLM-first recommendations: generate 4 dynamic outfits for your hypothetical purchase using occasion, weather, vibe, and your wardrobe context."
     >
       <div className="grid xl:grid-cols-[420px,1fr] gap-6 mb-2">
         <div className="space-y-4">
@@ -182,7 +181,7 @@ function Outfits() {
                   vibe,
                   weather_temp: typeof weatherTemp === 'number' ? weatherTemp : null,
                   weather_conditions: weatherConditions,
-                  engine,
+                  engine: 'react' as const,
                   candidate,
                 }
                 const res = await generateOutfits(body)
@@ -199,23 +198,7 @@ function Outfits() {
           >
             {loading ? 'Generating…' : 'Generate 4 outfits'}
           </button>
-          <div className="flex items-center gap-2 text-xs text-gray-600 mt-2">
-            <span>Engine</span>
-            <button
-              type="button"
-              onClick={() => setEngine('react')}
-              className={`px-3 py-1 rounded-full border ${engine === 'react' ? 'bg-pink-50 border-pink-300 text-pink-700' : 'bg-white border-gray-200'}`}
-            >
-              ReAct
-            </button>
-            <button
-              type="button"
-              onClick={() => setEngine('rules')}
-              className={`px-3 py-1 rounded-full border ${engine === 'rules' ? 'bg-pink-50 border-pink-300 text-pink-700' : 'bg-white border-gray-200'}`}
-            >
-              Rules
-            </button>
-          </div>
+          <p className="text-[11px] text-gray-500 mt-2">Mode: LLM-first recommender</p>
         </div>
 
         <div className="space-y-4">

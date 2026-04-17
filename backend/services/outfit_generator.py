@@ -34,7 +34,7 @@ _JUDGE_BLEND = 0.35
 _COMPLETENESS_WEIGHT = 0.08
 from services import trends_db, user_profile, wardrobe_db
 from services.outfit_judge import judge_outfit
-from services.outfit_react_agent import run_react_outfit_planner
+from services.outfit_react_agent import run_llm_outfit_recommender, run_react_outfit_planner
 from services.outfit_tools import formality_compatible, item_slot, pattern_compatible, trend_check, weather_check
 
 
@@ -308,6 +308,124 @@ async def generate_outfits(payload: dict[str, Any]) -> dict[str, Any]:
     engine_used = "rules"
     react_fallback_reason: str | None = None
     if engine == "react":
+        llm_out = await run_llm_outfit_recommender(
+            candidate=candidate,
+            wardrobe_items=wardrobe_items,
+            color_season=color_season,
+            occasion=occasion,
+            vibe=vibe,
+            weather_temp=weather_temp,
+            weather_conditions=weather_conditions,
+        )
+        if llm_out.get("success"):
+            item_by_id = {str(w.get("id")): w for w in wardrobe_items if w.get("id") is not None}
+            outfits: list[dict[str, Any]] = []
+            for plan in llm_out.get("outfits", []):
+                ids = [str(i) for i in plan.get("item_ids", [])]
+                chosen = [item_by_id[i] for i in ids if i in item_by_id]
+                if len(chosen) < 2:
+                    continue
+                anchor = chosen[0]
+                w_color = _color_match_score(color_season, _pick_color(anchor.get("primary_color")))
+                c_color = _color_match_score(color_season, _pick_color(candidate.get("primary_color")))
+                c_season = seasonal_versatility(candidate)
+                coherence_vals = [_style_coherence_ok(candidate, it) for it in chosen]
+                coherence = sum(coherence_vals) / max(len(coherence_vals), 1)
+                wcheck = weather_check(chosen, weather_temp, weather_conditions)
+                tcheck = trend_check(chosen, trends, color_season)
+                weather_score = float(wcheck.get("weather_score") or 0.5)
+                trend_score = float(tcheck.get("trend_score") or 0.5)
+                overall_prejudge = (
+                    ((c_color + w_color) * 0.5) * _PREJUDGE_W["color_avg"]
+                    + c_season * _PREJUDGE_W["season"]
+                    + coherence * _PREJUDGE_W["coherence"]
+                    + weather_score * _PREJUDGE_W["weather"]
+                    + trend_score * _PREJUDGE_W["trend"]
+                    + _COMPLETENESS_WEIGHT
+                )
+                judge = await judge_outfit(
+                    outfit_items=[candidate] + chosen,
+                    occasion=occasion,
+                    vibe=vibe,
+                    weather_temp=weather_temp,
+                    weather_conditions=weather_conditions,
+                    color_season=color_season,
+                    trend_context=str([t.get("name") for t in trends[:5]]),
+                )
+                judge_overall_norm = max(0.0, min(1.0, float(judge.get("overall_score", 6.0)) / 10.0))
+                prejudge_share = 1.0 - _JUDGE_BLEND
+                overall = round(
+                    (overall_prejudge * prejudge_share + judge_overall_norm * _JUDGE_BLEND) * 100,
+                    1,
+                )
+                reasoning_bits = _explain_bits(
+                    occasion=occasion,
+                    vibe=vibe,
+                    color_season=color_season,
+                    weather_score=weather_score,
+                    trend_score=trend_score,
+                )
+                if str(plan.get("reasoning") or "").strip():
+                    reasoning_bits.insert(0, str(plan.get("reasoning")).strip())
+                reasoning_bits.append(
+                    f"judge overall {judge.get('overall_score', 6.0)}/10 based on coherence, color, occasion, trend, practicality"
+                )
+                outfits.append(
+                    {
+                        "items": [it.get("id") for it in chosen if it.get("id") is not None],
+                        "item_details": [
+                            {
+                                "id": it.get("id"),
+                                "type": it.get("type"),
+                                "image_url": it.get("image_url"),
+                                "primary_color": it.get("primary_color"),
+                                "pattern": it.get("pattern"),
+                                "formality": it.get("formality"),
+                            }
+                            for it in chosen
+                        ],
+                        "reasoning": "; ".join(reasoning_bits),
+                        "scores": {
+                            "color_match": round((c_color * 0.5 + w_color * 0.5), 2),
+                            "seasonal_versatility": round(c_season, 2),
+                            "style_coherence": round(coherence, 2),
+                            "weather_fit": round(weather_score, 2),
+                            "trend_relevance": round(trend_score, 2),
+                            "judge": judge,
+                        },
+                        "overall_score": overall,
+                        "matched_item": {
+                            "id": anchor.get("id"),
+                            "image_url": anchor.get("image_url"),
+                            "type": anchor.get("type"),
+                            "primary_color": anchor.get("primary_color"),
+                            "pattern": anchor.get("pattern"),
+                            "formality": anchor.get("formality"),
+                        },
+                    }
+                )
+            if outfits:
+                outfits.sort(key=lambda x: float(x.get("overall_score") or 0), reverse=True)
+                return {
+                    "outfits": outfits[:4],
+                    "candidate": candidate,
+                    "color_season": color_season,
+                    "debug": {
+                        "engine": "react",
+                        "candidate_type": candidate_type,
+                        "compatible_expected_types": sorted(list(compatible)) if compatible else [],
+                        "compatible_items_count": len(compatible_items),
+                        "filtered_count": len(filtered),
+                        "fallback_used": False,
+                        "trace": [],
+                        "react_fallback_reason": None,
+                        "llm_mode": "direct_outfit_generation",
+                    },
+                }
+        # LLM-only contract: do not silently drop back to deterministic rules.
+        reason = str(llm_out.get("reason") or "llm_no_outfits")
+        raise RuntimeError(f"LLM recommender unavailable: {reason}")
+
         react_out = await run_react_outfit_planner(
             candidate=candidate,
             wardrobe_items=wardrobe_items,
@@ -324,7 +442,7 @@ async def generate_outfits(payload: dict[str, Any]) -> dict[str, Any]:
             selected_pool = sorted(selected_pool, key=lambda w: _rank_anchor(candidate, w, color_season), reverse=True)
             engine_used = "react"
         else:
-            react_fallback_reason = "react returned empty selected_item_ids"
+            react_fallback_reason = react_fallback_reason or "react returned empty selected_item_ids"
 
     if len(selected_pool) < 4:
         # Fallback: if filtering is too strict, rank a broader set by color/season.

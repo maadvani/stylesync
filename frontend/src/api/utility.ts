@@ -21,6 +21,9 @@ export type UtilityScore = {
   color_match: number;
   cost_per_wear: number | null;
   color_season: string | null;
+  price_value_penalty?: number;
+  max_reasonable_cpw?: number | null;
+  expensive_for_value?: boolean;
 };
 
 export type AiExplanation = {
@@ -32,6 +35,7 @@ export type AiExplanation = {
 export type EnhancedUtilityResponse = {
   score: number;
   adjusted_score: number;
+  preference_adjusted_score?: number;
   breakdown: UtilityScore;
   cost_per_wear: number | null;
   ai_explanation: AiExplanation;

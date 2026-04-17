@@ -80,6 +80,27 @@ def list_wardrobe_items(user_id: str | None = None) -> list[dict[str, Any]]:
         return []
 
 
+def list_all_wardrobe_items(limit: int = 500) -> list[dict[str, Any]]:
+    """
+    List wardrobe items across all users, newest first.
+    Used as an MVP fallback when the default user has no rows.
+    """
+    client = _client()
+    if not client:
+        return []
+    try:
+        r = (
+            client.table("wardrobe_items")
+            .select("*")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return list(r.data) if r.data else []
+    except Exception:
+        return []
+
+
 def update_wardrobe_item(
     item_id: str,
     updates: dict[str, Any],

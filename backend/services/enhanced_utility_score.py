@@ -58,6 +58,47 @@ _GEMINI_EXPLANATION_SCHEMA: dict[str, Any] = {
 _FREQUENT_THRESHOLD = 2
 
 
+def _apply_price_value_adjustment(
+    adjusted_score: float,
+    *,
+    price: float | None,
+    cost_per_wear: float | None,
+) -> dict[str, Any]:
+    """
+    Penalize expensive items when utility coverage is weak.
+    Higher adjusted score tolerates somewhat higher CPW before penalty kicks in.
+    """
+    if price is None or price <= 0 or cost_per_wear is None:
+        return {
+            "score_after_price": round(float(adjusted_score), 1),
+            "price_value_penalty": 0.0,
+            "max_reasonable_cpw": None,
+            "expensive_for_value": False,
+        }
+
+    # Dynamic CPW ceiling: high-utility items can justify more spend.
+    # score=100 => ~18; score=50 => ~12; score=0 => ~6
+    max_reasonable_cpw = 6.0 + (float(adjusted_score) / 100.0) * 12.0
+    ratio = float(cost_per_wear) / max_reasonable_cpw if max_reasonable_cpw > 0 else 1.0
+    if ratio <= 1.0:
+        return {
+            "score_after_price": round(float(adjusted_score), 1),
+            "price_value_penalty": 0.0,
+            "max_reasonable_cpw": round(max_reasonable_cpw, 2),
+            "expensive_for_value": False,
+        }
+
+    # Penalty ramps quickly once CPW exceeds the dynamic ceiling.
+    penalty = min(35.0, (ratio - 1.0) * 28.0)
+    score_after = max(0.0, min(100.0, float(adjusted_score) - penalty))
+    return {
+        "score_after_price": round(score_after, 1),
+        "price_value_penalty": round(penalty, 1),
+        "max_reasonable_cpw": round(max_reasonable_cpw, 2),
+        "expensive_for_value": True,
+    }
+
+
 def _heuristic_ai_explanation(
     breakdown: dict[str, Any],
     adjusted_score: float | None,
@@ -80,6 +121,8 @@ def _heuristic_ai_explanation(
 
     op = breakdown.get("outfit_potential")
     cpw = breakdown.get("cost_per_wear")
+    price_penalty = float(breakdown.get("price_value_penalty") or 0.0)
+    expensive_for_value = bool(breakdown.get("expensive_for_value"))
     cm = breakdown.get("color_match")
 
     parts2: list[str] = []
@@ -93,12 +136,19 @@ def _heuristic_ai_explanation(
     line2 = " · ".join(parts2) if parts2 else "Add more catalogued pieces to strengthen pairing and color signals."
 
     cpw_line = f"Cost per wear ~${cpw} at your price." if cpw is not None else "Add a price to see cost per wear."
+    if expensive_for_value and cpw is not None:
+        cap = breakdown.get("max_reasonable_cpw")
+        cpw_line = (
+            f"Cost per wear ~${cpw} is high for current closet utility"
+            + (f" (target <= ~${cap})." if cap is not None else ".")
+        )
 
     return {
         "summary": label,
         "reasoning": [
             f"Utility model ~{s:.0f}/100 (wardrobe + palette rules).",
             line2,
+            f"Price-value adjustment: -{price_penalty:.1f} points due to high price versus predicted re-use." if price_penalty > 0 else "Price is within expected range for the predicted re-use level.",
             f"{cpw_line} Google AI did not return a usable JSON summary this time — if this repeats, check server WARNING logs and GEMINI_MODEL.",
         ],
         "confidence": conf,
@@ -402,15 +452,23 @@ async def enhanced_utility_score(
     _ = user_trends
     _ = wardrobe_analytics
     base_result = calculate_utility_score(item)
-    adjusted_score = adjust_score_with_preferences(base_result["score"], item, user_preferences)
+    preference_adjusted = adjust_score_with_preferences(base_result["score"], item, user_preferences)
+    price_adj = _apply_price_value_adjustment(
+        preference_adjusted,
+        price=float(item.get("price")) if item.get("price") not in (None, "") else None,
+        cost_per_wear=float(base_result["cost_per_wear"]) if base_result.get("cost_per_wear") is not None else None,
+    )
+    adjusted_score = float(price_adj["score_after_price"])
+    enriched_breakdown = {**base_result, **price_adj}
     ai_explanation = await generate_ai_explanation(
-        item, base_result, user_profile, adjusted_score=adjusted_score
+        item, enriched_breakdown, user_profile, adjusted_score=adjusted_score
     )
 
     return {
         "score": base_result["score"],
         "adjusted_score": adjusted_score,
-        "breakdown": base_result,
+        "preference_adjusted_score": preference_adjusted,
+        "breakdown": enriched_breakdown,
         "cost_per_wear": base_result["cost_per_wear"],
         "ai_explanation": ai_explanation,
         "scored_item": item,

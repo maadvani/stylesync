@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from services import cloudinary_service, ai_tagging, wardrobe_db
+from services.tracing import traceable
 
 router = APIRouter(prefix="/wardrobe", tags=["wardrobe"])
 
@@ -26,6 +27,7 @@ class WardrobeUpdate(BaseModel):
 
 
 @router.post("/upload")
+@traceable(name="wardrobe.upload", run_type="chain", tags=["wardrobe", "api"])
 async def upload_wardrobe_item(
     file: UploadFile = File(...),
 ):
@@ -115,6 +117,7 @@ def delete_wardrobe_item(item_id: str):
 
 
 @router.post("/{item_id}/retag")
+@traceable(name="wardrobe.retag", run_type="chain", tags=["wardrobe", "api"])
 def retag_wardrobe_item(item_id: str, engine: str | None = None, targets: str | None = None):
     """
     Re-run AI tagging using the stored image_url and update the item's attributes.

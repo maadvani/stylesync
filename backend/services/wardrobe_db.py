@@ -7,6 +7,7 @@ from typing import Any
 from supabase import create_client, Client
 
 from config import settings
+from services.tracing import traceable
 
 # For MVP without auth, use a single default user. Replace with real user_id when auth exists.
 DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -18,6 +19,7 @@ def _client() -> Client | None:
     return create_client(settings.supabase_url, settings.supabase_key)
 
 
+@traceable(name="wardrobe.db.insert_item", run_type="tool", tags=["wardrobe", "db"])
 def insert_wardrobe_item(
     user_id: str,
     image_url: str,

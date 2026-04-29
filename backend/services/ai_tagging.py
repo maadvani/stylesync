@@ -12,6 +12,7 @@ import httpx
 from groq import Groq
 
 from config import settings
+from services.tracing import traceable
 
 # Hugging Face: use a model that returns a single caption (BLIP2 is reliable on free tier).
 # Florence-2 on serverless may require different payload; we can add it later.
@@ -133,6 +134,7 @@ def _gemini_primary_model_url() -> str:
     return f"https://generativelanguage.googleapis.com/v1beta/models/{mid}:generateContent"
 
 
+@traceable(name="tagging.classic.caption", run_type="tool", tags=["wardrobe", "tagging"])
 def get_caption(image_bytes: bytes) -> str | None:
     """Get one-line image caption from Hugging Face Inference API."""
     if not settings.hf_token:
@@ -202,6 +204,7 @@ def _parse_and_validate(raw: str) -> dict[str, Any] | None:
     return out
 
 
+@traceable(name="tagging.classic.groq_json", run_type="llm", tags=["wardrobe", "tagging"])
 def _groq_caption_to_json(caption: str) -> dict[str, Any] | None:
     """Ask Groq to turn caption into our schema. JSON only, no markdown."""
     if not settings.groq_api_key:
@@ -227,6 +230,7 @@ Output exactly this structure (use null where not applicable):
         return None
 
 
+@traceable(name="tagging.classic.pipeline", run_type="chain", tags=["wardrobe", "tagging"])
 def recognize_clothing(image_bytes: bytes) -> dict[str, Any]:
     """
     Run full pipeline: HF caption → Groq JSON. Retry once on parse failure; then fallback to defaults.
@@ -246,6 +250,7 @@ def recognize_clothing(image_bytes: bytes) -> dict[str, Any]:
     return dict(DEFAULT_ATTRIBUTES)
 
 
+@traceable(name="tagging.gemini.vision_json", run_type="llm", tags=["wardrobe", "tagging"])
 def _gemini_image_to_json(
     image_bytes: bytes,
     mime_type: str = "image/jpeg",
@@ -342,6 +347,7 @@ Fill every field. Use null only for secondary_color."""
         return None
 
 
+@traceable(name="tagging.gemini.pipeline", run_type="chain", tags=["wardrobe", "tagging"])
 def recognize_clothing_gemini(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict[str, Any]:
     """
     Gemini-first tagging: retry once, then fall back to the HF+Groq pipeline, then defaults.

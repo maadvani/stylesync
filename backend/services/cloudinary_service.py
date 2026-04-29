@@ -6,6 +6,7 @@ import io
 from config import Settings
 import cloudinary
 import cloudinary.uploader
+from services.tracing import traceable
 
 
 def configure():
@@ -22,6 +23,7 @@ def configure():
     return True
 
 
+@traceable(name="cloudinary.upload_image", run_type="tool", tags=["wardrobe", "media"])
 def upload_image(
     file_bytes: bytes,
     content_type: str,

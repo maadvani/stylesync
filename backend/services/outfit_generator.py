@@ -443,6 +443,18 @@ def _inject_hypothetical_into_row(
     return [hyp, *out]
 
 
+def _unique_slot_ids(rows: list[list[dict[str, Any]]], slot_name: str) -> set[str]:
+    out: set[str] = set()
+    for row in rows:
+        for it in row:
+            if item_slot(it.get("type")) != slot_name:
+                continue
+            sid = str(it.get("id") or "")
+            if sid and not _is_hypothetical_item_id(sid):
+                out.add(sid)
+    return out
+
+
 def _real_ids_in_triplet(row: list[dict[str, Any]]) -> set[str]:
     return {str(x["id"]) for x in row if x.get("id") and not _is_hypothetical_item_id(x.get("id"))}
 
@@ -559,6 +571,18 @@ def _ensure_four_rows_with_reuse(
             ids.append("")
         return (ids[0], ids[1], ids[2])
 
+    def slot_signature(row: list[dict[str, Any]]) -> tuple[str, str, str]:
+        out = {"top": "", "bottom": "", "shoes": ""}
+        for x in row[:3]:
+            slot = item_slot(x.get("type"))
+            if slot in out:
+                out[slot] = str(x.get("id") or "")
+        return (out["top"], out["bottom"], out["shoes"])
+
+    def slot_distance(a: tuple[str, str, str], b: tuple[str, str, str]) -> int:
+        # Distance in [0..3] across (top, bottom, shoes) slot identities.
+        return sum(1 for i in range(3) if a[i] != b[i])
+
     for r in picked:
         seen_triplets.add(key_for(r))
         for x in r[:3]:
@@ -572,12 +596,24 @@ def _ensure_four_rows_with_reuse(
                 used_shoes.add(sid)
 
     while len(picked) < target:
+        strict_min_distance = 2
+        if len(picked) >= 3:
+            strict_min_distance = 1
         best_row: list[dict[str, Any]] | None = None
         best_score = -10**9
+        best_sig: tuple[str, str, str] | None = None
+        picked_sigs = [slot_signature(r) for r in picked]
         for row in triplets:
             if not _triplet_disjoint_ids_valid(row):
                 continue
             row_key = key_for(row)
+            if row_key in seen_triplets:
+                # Hard block exact duplicates unless absolutely no other candidate exists.
+                continue
+            row_sig = slot_signature(row)
+            if picked_sigs and min(slot_distance(row_sig, ps) for ps in picked_sigs) < strict_min_distance:
+                # Too visually similar to an existing look.
+                continue
             score = 0
             # Strongly prefer new tops/bottoms to keep looks distinct.
             for x in row[:3]:
@@ -586,20 +622,49 @@ def _ensure_four_rows_with_reuse(
                     continue
                 slot = item_slot(x.get("type"))
                 if slot in {"top", "bottom"}:
-                    score += 6 if sid not in used_top_bottom else -2
+                    # Keep tops/bottoms varied much more strongly than shoes.
+                    score += 8 if sid not in used_top_bottom else -8
                 elif slot == "shoes":
-                    score += 2 if sid not in used_shoes else 0
-            if row_key in seen_triplets:
-                score -= 5
+                    score += 1 if sid not in used_shoes else -1
             if score > best_score:
                 best_score = score
                 best_row = row
+                best_sig = row_sig
 
         if best_row is None:
-            break
+            # Relax similarity threshold once; still avoid exact duplicate triplets.
+            if strict_min_distance > 0:
+                strict_min_distance = 0
+                for row in triplets:
+                    if not _triplet_disjoint_ids_valid(row):
+                        continue
+                    row_key = key_for(row)
+                    if row_key in seen_triplets:
+                        continue
+                    row_sig = slot_signature(row)
+                    score = 0
+                    for x in row[:3]:
+                        sid = str(x.get("id") or "")
+                        if not sid or _is_hypothetical_item_id(sid):
+                            continue
+                        slot = item_slot(x.get("type"))
+                        if slot in {"top", "bottom"}:
+                            score += 8 if sid not in used_top_bottom else -8
+                        elif slot == "shoes":
+                            score += 1 if sid not in used_shoes else -1
+                    if picked_sigs and min(slot_distance(row_sig, ps) for ps in picked_sigs) < strict_min_distance:
+                        score -= 4
+                    if score > best_score:
+                        best_score = score
+                        best_row = row
+                        best_sig = row_sig
+            if best_row is None:
+                break
 
         picked.append(list(best_row))
         seen_triplets.add(key_for(best_row))
+        if best_sig is None:
+            best_sig = slot_signature(best_row)
         for x in best_row[:3]:
             sid = str(x.get("id") or "")
             if not sid or _is_hypothetical_item_id(sid):
@@ -853,24 +918,61 @@ async def generate_outfits(payload: dict[str, Any]) -> dict[str, Any]:
         react_rows: list[list[dict[str, Any]]] = []
         react_selected_ids: list[list[str]] = []
         react_selected_reasons: list[str] = []
+        react_seen_signatures: set[tuple[str, ...]] = set()
         by_id = {str(w.get("id")): w for w in wardrobe_items if w.get("id") is not None}
         for rec in react.get("outfits") or []:
             ids = [str(x) for x in rec.get("item_ids", [])]
+            sig = tuple(ids[:4])
+            if sig in react_seen_signatures:
+                continue
             chosen = [by_id[i] for i in ids if i in by_id]
             if len(chosen) >= 2:
                 row = _inject_hypothetical_into_row(chosen[:4], hyp=react_hyp, c_slot=react_c_slot)
                 react_rows.append(row)
                 react_selected_ids.append(ids[:4])
                 react_selected_reasons.append(str(rec.get("reasoning") or "").strip())
+                react_seen_signatures.add(sig)
             if len(react_rows) >= 4:
                 break
         react_meta["react_selected_ids"] = react_selected_ids
         react_meta["react_selected_reasoning"] = react_selected_reasons
+        # Accept React primary only if it is not overly repetitive on core slots.
+        unique_tops = _unique_slot_ids(react_rows, "top")
+        unique_bottoms = _unique_slot_ids(react_rows, "bottom")
+        unique_shoes = _unique_slot_ids(react_rows, "shoes")
+        min_tops = min(2, int(pool_counts.get("top", 0)))
+        min_bottoms = min(2, int(pool_counts.get("bottom", 0)))
+        min_shoes = min(2, int(pool_counts.get("shoes", 0)))
+        if react_c_slot == "top":
+            min_tops = 0
+        elif react_c_slot == "bottom":
+            min_bottoms = 0
+        elif react_c_slot == "shoes":
+            min_shoes = 0
+        react_diversity_ok = (
+            len(unique_tops) >= min_tops
+            and len(unique_bottoms) >= min_bottoms
+            and len(unique_shoes) >= min_shoes
+        )
+        react_meta["react_slot_diversity"] = {
+            "tops": len(unique_tops),
+            "bottoms": len(unique_bottoms),
+            "shoes": len(unique_shoes),
+            "required": {"tops": min_tops, "bottoms": min_bottoms, "shoes": min_shoes},
+        }
         if len(react_rows) >= 4:
-            rows = react_rows
-            used_dfs_fallback = False
-            generation_path = "react_primary"
-            effective_engine = "react"
+            if react_diversity_ok:
+                rows = react_rows
+                used_dfs_fallback = False
+                generation_path = "react_primary"
+                effective_engine = "react"
+            else:
+                generation_path = "structured_fallback"
+                effective_engine = "structured"
+                react_meta["react_fallback_reason"] = (
+                    "React output was too repetitive across core slots; switched to structured fallback "
+                    f"(slot diversity={react_meta.get('react_slot_diversity')})."
+                )
         else:
             generation_path = "structured_fallback"
             effective_engine = "structured"

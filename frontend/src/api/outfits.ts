@@ -10,12 +10,14 @@ export type CandidateItem = {
   material?: string | null
   style_tags?: string[] | null
   price?: number | null
+  /** Set after photo upload + Gemini tagging (Cloudinary URL). */
+  image_url?: string | null
 }
 
 export type OutfitCard = {
   items: string[]
   item_details?: Array<{
-    id: string
+    id?: string | null
     image_url?: string
     type?: string
     primary_color?: string | null
@@ -40,7 +42,7 @@ export type OutfitCard = {
   }
   overall_score: number
   matched_item?: {
-    id: string
+    id?: string | null
     image_url?: string
     type?: string
     primary_color?: string | null
@@ -49,14 +51,35 @@ export type OutfitCard = {
   }
 }
 
+export async function tagHypotheticalPhoto(
+  file: File,
+): Promise<{ image_url: string; candidate: CandidateItem }> {
+  const fd = new FormData()
+  fd.append("file", file)
+  const r = await fetch(`${BASE}/api/outfits/hypothetical-photo`, {
+    method: "POST",
+    body: fd,
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail ?? "Photo tagging failed")
+  return data as { image_url: string; candidate: CandidateItem }
+}
+
 export async function generateOutfits(body: {
   occasion: string
   weather_temp?: number | null
   weather_conditions?: string | null
   vibe?: string | null
   engine?: "react"
-  candidate: CandidateItem
-}): Promise<{ outfits: OutfitCard[]; debug?: Record<string, unknown> }> {
+  candidate?: CandidateItem | null
+  /** When true, one slot (top / bottom / shoes) uses the hypothetical item if its type matches. */
+  include_hypothetical?: boolean
+}): Promise<{
+  outfits: OutfitCard[]
+  debug?: Record<string, unknown>
+  shopping_message?: string | null
+  suggested_buys?: string[] | null
+}> {
   const r = await fetch(`${BASE}/api/outfits/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -64,6 +87,21 @@ export async function generateOutfits(body: {
   })
   const data = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(data.detail ?? "Outfit generation failed")
-  return data as { outfits: OutfitCard[]; debug?: Record<string, unknown> }
+  return data as {
+    outfits: OutfitCard[]
+    debug?: Record<string, unknown>
+    shopping_message?: string | null
+    suggested_buys?: string[] | null
+  }
+}
+
+export async function logWearFromOutfit(itemIds: string[]): Promise<void> {
+  const r = await fetch(`${BASE}/api/outfits/wear-log`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item_ids: itemIds, source: "outfit_card" }),
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail ?? "Could not log wear")
 }
 

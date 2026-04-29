@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     outfits_judge_model: str = "gemini-2.0-flash"
     outfits_judge_max_tokens: int = 512
 
+    # LangSmith tracing (optional; safe no-op when disabled)
+    langsmith_tracing: bool = False
+    langsmith_api_key: str = ""
+    langsmith_project: str = "stylesync-backend"
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+
     # Cloudinary (image storage)
     cloudinary_cloud_name: str = ""
     cloudinary_api_key: str = ""

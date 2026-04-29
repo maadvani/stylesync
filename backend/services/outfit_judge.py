@@ -20,6 +20,11 @@ _FALLBACK = {
     "trend_relevance": {"score": 5.5, "reasoning": "Trend signal is moderate from available data."},
     "practicality": {"score": 6.0, "reasoning": "Weather and wardrobe practicality are acceptable."},
     "overall_score": 6.0,
+    "descriptive_reasoning": "This look is generally balanced for the requested context with coordinated colors and practical layering.",
+    "accessory_suggestions": [
+        "Simple metal jewelry that matches your undertone.",
+        "A structured everyday bag in a neutral color.",
+    ],
 }
 
 
@@ -107,6 +112,14 @@ def _normalize(payload: dict[str, Any] | None) -> dict[str, Any]:
         out["overall_score"] = round(sum(dims) / len(dims), 1)
     else:
         out["overall_score"] = round(_clamp10(o), 1)
+    desc = payload.get("descriptive_reasoning") if isinstance(payload, dict) else None
+    if isinstance(desc, str) and desc.strip():
+        out["descriptive_reasoning"] = desc.strip()
+    acc = payload.get("accessory_suggestions") if isinstance(payload, dict) else None
+    if isinstance(acc, list):
+        cleaned = [str(x).strip() for x in acc if str(x).strip()]
+        if cleaned:
+            out["accessory_suggestions"] = cleaned[:4]
     return out
 
 
@@ -139,7 +152,9 @@ async def judge_outfit(
   "occasion_appropriateness": {{"score": 1-10, "reasoning": "..." }},
   "trend_relevance": {{"score": 1-10, "reasoning": "..." }},
   "practicality": {{"score": 1-10, "reasoning": "..." }},
-  "overall_score": 1-10
+  "overall_score": 1-10,
+  "descriptive_reasoning": "2-4 sentences explaining why these exact pieces work together for this user context.",
+  "accessory_suggestions": ["2-4 concrete accessory ideas matched to this outfit and occasion"]
 }}
 
 Items: {json.dumps(items_desc, default=str)}
@@ -150,6 +165,11 @@ Context:
 - weather_conditions: {weather_conditions}
 - color_season: {color_season}
 - trend_context: {trend_context}
+
+Guidelines:
+- Be specific about garment interactions (silhouette, color contrast, texture, formality alignment).
+- Mention why it suits the stated occasion and weather.
+- Accessory suggestions must be practical and directly compatible with the outfit.
 """
     raw = await _call_judge(prompt)
     return _normalize(raw)

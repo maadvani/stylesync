@@ -13,6 +13,7 @@ from routers import (
     trends as trends_router,
     outfits as outfits_router,
     shopping as shopping_router,
+    analytics as analytics_router,
 )
 
 app = FastAPI(
@@ -37,6 +38,7 @@ app.include_router(utility_router.router, prefix="/api")
 app.include_router(trends_router.router, prefix="/api")
 app.include_router(outfits_router.router, prefix="/api")
 app.include_router(shopping_router.router, prefix="/api")
+app.include_router(analytics_router.router, prefix="/api")
 
 
 @app.get("/api/utility/ai-config")

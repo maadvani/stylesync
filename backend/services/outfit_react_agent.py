@@ -14,6 +14,7 @@ import httpx
 
 from config import settings
 from services import trends_db
+from services.tracing import traceable
 from services.outfit_tools import check_style_rules, search_wardrobe, trend_check, weather_check
 
 log = logging.getLogger(__name__)
@@ -382,6 +383,7 @@ def _react_model_chain() -> list[str]:
     return chain
 
 
+@traceable(name="outfits.react.step", run_type="llm", tags=["outfits", "react"])
 async def _react_step(prompt: str) -> dict[str, Any] | None:
     key = (settings.gemini_api_key or "").strip()
     if not key:
@@ -486,6 +488,7 @@ Prefer <= 4 ids for selected_item_ids.
 """
 
 
+@traceable(name="outfits.react.planner", run_type="chain", tags=["outfits", "react"])
 async def run_react_outfit_planner(
     *,
     candidate: dict[str, Any],
@@ -584,6 +587,7 @@ async def run_react_outfit_planner(
     }
 
 
+@traceable(name="outfits.react.recommender", run_type="chain", tags=["outfits", "react", "llm"])
 async def run_llm_outfit_recommender(
     *,
     candidate: dict[str, Any],
